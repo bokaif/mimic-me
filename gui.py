@@ -8,8 +8,18 @@ import json
 import time as _time
 import sys
 import os
+import ctypes
 
 ctk.set_appearance_mode("dark")
+
+# load inter font from assets
+_base = os.path.dirname(os.path.abspath(__file__))
+_FR_PRIVATE = 0x10
+for _f in ("Inter-Regular.ttf", "Inter-Bold.ttf"):
+    _fp = os.path.join(_base, "assets", _f)
+    if os.path.exists(_fp):
+        ctypes.windll.gdi32.AddFontResourceExW(_fp, _FR_PRIVATE, 0)
+FONT = "Inter"
 
 ACCENT = "#9b72cf"
 ACCENT_H = "#b08de0"
@@ -85,7 +95,7 @@ class MimicMe(ctk.CTk):
         super().__init__()
         self.overrideredirect(True)
         self.configure(fg_color=BORDER_COLOR)
-        self.geometry("460x640")
+        self.geometry("460x600")
 
         self.mouse_events = []
         self.keyboard_events = []
@@ -99,29 +109,42 @@ class MimicMe(ctk.CTk):
 
         self._icons = {
             "record": _icon(_circle, "#ffffff", 16),
+            "record_disabled": _icon(_circle, "#888899", 16),
             "play": _icon(_tri, "#111111", 16),
+            "play_disabled": _icon(_tri, "#888899", 16),
             "stop": _icon(_sq, "#ffffff", 16),
+            "stop_disabled": _icon(_sq, "#888899", 16),
             "save": _icon(_arrow_down, "#e8e8f0", 16),
+            "save_disabled": _icon(_arrow_down, "#888899", 16),
             "load": _icon(_folder, "#e8e8f0", 16),
+            "load_disabled": _icon(_folder, "#888899", 16),
             "close": _icon(_xmark, "#888899", 14),
+            "close_hover": _icon(_xmark, "#ffffff", 14),
             "min": _icon(_minus, "#888899", 14),
         }
 
         self._build()
         self._bind_keys()
         self._center()
-        self.bind("<Map>", self._on_map)
+        self._setup_taskbar()
+        self.bind_all("<Button-1>", self._steal_focus, add="+")
 
     def _build_titlebar(self):
         tb = ctk.CTkFrame(self, fg_color=TITLEBAR_BG, height=38, corner_radius=0)
         tb.pack(fill="x", padx=1, pady=(1, 0))
         tb.pack_propagate(False)
 
+        try:
+            self.iconbitmap(os.path.join(_base, "assets", "mimic-me.png"))
+        except Exception:
+            pass
+
+        title_img = ctk.CTkImage(Image.open(os.path.join(_base, "assets", "mimic-me.png")), size=(14, 14))
         title = ctk.CTkLabel(
-            tb, text="  mimic me",
-            font=ctk.CTkFont(size=12, weight="bold"),
+            tb, text=" mimic me", image=title_img, compound="left",
+            font=ctk.CTkFont(family=FONT, size=12, weight="bold"),
             text_color=MUTED, anchor="w")
-        title.pack(side="left", fill="x", expand=True, padx=4)
+        title.pack(side="left", fill="x", expand=True, padx=(8, 4))
 
         close_btn = ctk.CTkButton(
             tb, text="", image=self._icons["close"],
@@ -129,6 +152,8 @@ class MimicMe(ctk.CTk):
             fg_color="transparent", hover_color=DANGER,
             command=self._quit)
         close_btn.pack(side="right")
+        close_btn.bind("<Enter>", lambda e: close_btn.configure(image=self._icons["close_hover"]))
+        close_btn.bind("<Leave>", lambda e: close_btn.configure(image=self._icons["close"]))
 
         min_btn = ctk.CTkButton(
             tb, text="", image=self._icons["min"],
@@ -148,13 +173,20 @@ class MimicMe(ctk.CTk):
     def _on_drag(self, e):
         self.geometry(f"+{self.winfo_x() + e.x - self._drag_x}+{self.winfo_y() + e.y - self._drag_y}")
 
-    def _minimize(self):
-        self.overrideredirect(False)
-        self.iconify()
+    def _setup_taskbar(self):
+        # make borderless window show in taskbar
+        self.update_idletasks()
+        hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+        GWL_EXSTYLE = -20
+        style = ctypes.windll.user32.GetWindowLongW(hwnd, GWL_EXSTYLE)
+        style = (style & ~0x00000080) | 0x00040000  # ~TOOLWINDOW | APPWINDOW
+        ctypes.windll.user32.SetWindowLongW(hwnd, GWL_EXSTYLE, style)
+        self.withdraw()
+        self.after(10, self.deiconify)
 
-    def _on_map(self, e):
-        if e.widget == self:
-            self.overrideredirect(True)
+    def _minimize(self):
+        hwnd = ctypes.windll.user32.GetParent(self.winfo_id())
+        ctypes.windll.user32.ShowWindow(hwnd, 6)  # SW_MINIMIZE
 
     def _center(self):
         self.update_idletasks()
@@ -165,8 +197,8 @@ class MimicMe(ctk.CTk):
         c = ctk.CTkFrame(self, fg_color=SURFACE, corner_radius=0)
         c.pack(fill="both", expand=True, padx=1, pady=(0, 1))
 
-        ctk.CTkLabel(c, text="MIMIC ME", font=ctk.CTkFont(family="Segoe UI", size=30, weight="bold"), text_color="#fff").pack(pady=(22, 0))
-        ctk.CTkLabel(c, text="keyboard & mouse automation", font=ctk.CTkFont(size=12), text_color=MUTED).pack(pady=(2, 0))
+        ctk.CTkLabel(c, text="MIMIC ME", font=ctk.CTkFont(family=FONT, size=30, weight="bold"), text_color="#fff").pack(pady=(22, 0))
+        ctk.CTkLabel(c, text="keyboard & mouse automation", font=ctk.CTkFont(family=FONT, size=12), text_color=MUTED).pack(pady=(2, 0))
 
         actions = ctk.CTkFrame(c, fg_color=CARD, corner_radius=0, border_width=1, border_color=CARD_BORDER)
         actions.pack(fill="x", padx=28, pady=(18, 0))
@@ -174,13 +206,18 @@ class MimicMe(ctk.CTk):
         row.pack(padx=14, pady=14)
         row.grid_columnconfigure((0, 1, 2), weight=1, uniform="a")
 
-        self.record_btn = ctk.CTkButton(row, text="record", image=self._icons["record"], compound="left", width=120, height=40, corner_radius=0, fg_color=DANGER, hover_color=DANGER_H, font=ctk.CTkFont(size=13, weight="bold"), command=self.record)
+        self.record_btn = ctk.CTkButton(row, text="record", image=self._icons["record"], compound="left", width=120, height=40, corner_radius=0, fg_color=DANGER, hover_color=DANGER_H, font=ctk.CTkFont(family=FONT, size=13, weight="bold"), command=self.record)
+        self.record_btn._icon_name = "record"
         self.record_btn.grid(row=0, column=0, padx=4)
 
-        self.play_btn = ctk.CTkButton(row, text="play", image=self._icons["play"], compound="left", width=120, height=40, corner_radius=0, fg_color=SUCCESS, hover_color=SUCCESS_H, text_color="#111", font=ctk.CTkFont(size=13, weight="bold"), command=self.play)
+        self.play_btn = ctk.CTkButton(row, text="play", image=self._icons["play"], compound="left", width=120, height=40, corner_radius=0, fg_color=SUCCESS, hover_color=SUCCESS_H, text_color="#111", font=ctk.CTkFont(family=FONT, size=13, weight="bold"), command=self.play)
+        self.play_btn._icon_name = "play"
+        self._set_btn_state(self.play_btn, "disabled")
         self.play_btn.grid(row=0, column=1, padx=4)
 
-        self.stop_btn = ctk.CTkButton(row, text="stop", image=self._icons["stop"], compound="left", width=120, height=40, corner_radius=0, fg_color="#44445a", hover_color="#55556a", font=ctk.CTkFont(size=13, weight="bold"), command=self.stop, state="disabled")
+        self.stop_btn = ctk.CTkButton(row, text="stop", image=self._icons["stop"], compound="left", width=120, height=40, corner_radius=0, fg_color=ACCENT, hover_color=ACCENT_H, font=ctk.CTkFont(family=FONT, size=13, weight="bold"), command=self.stop)
+        self.stop_btn._icon_name = "stop"
+        self._set_btn_state(self.stop_btn, "disabled")
         self.stop_btn.grid(row=0, column=2, padx=4)
 
         settings = ctk.CTkFrame(c, fg_color=CARD, corner_radius=0, border_width=1, border_color=CARD_BORDER)
@@ -191,94 +228,158 @@ class MimicMe(ctk.CTk):
         for label, widget_fn in self._setting_rows(inner):
             r = ctk.CTkFrame(inner, fg_color="transparent")
             r.pack(fill="x", pady=(0, 10))
-            ctk.CTkLabel(r, text=label, text_color=MUTED, font=ctk.CTkFont(size=12)).pack(side="left")
+            ctk.CTkLabel(r, text=label, text_color=MUTED, font=ctk.CTkFont(family=FONT, size=12)).pack(side="left")
             widget_fn(r)
 
         r4 = ctk.CTkFrame(inner, fg_color="transparent")
         r4.pack(fill="x", pady=(4, 0))
         self.rec_mouse = ctk.BooleanVar(value=True)
         self.rec_kb = ctk.BooleanVar(value=True)
-        ctk.CTkSwitch(r4, text="mouse", variable=self.rec_mouse, font=ctk.CTkFont(size=12), text_color=MUTED, progress_color=ACCENT, button_color="#888", button_hover_color="#aaa", height=20, switch_width=36, switch_height=18).pack(side="left", padx=(0, 20))
-        ctk.CTkSwitch(r4, text="keyboard", variable=self.rec_kb, font=ctk.CTkFont(size=12), text_color=MUTED, progress_color=ACCENT, button_color="#888", button_hover_color="#aaa", height=20, switch_width=36, switch_height=18).pack(side="left")
+        ctk.CTkSwitch(r4, text="mouse", variable=self.rec_mouse, font=ctk.CTkFont(family=FONT, size=12), text_color=MUTED, progress_color=ACCENT, button_color="#fff", button_hover_color="#ddd", height=20, switch_width=36, switch_height=18).pack(side="left", padx=(0, 20))
+        ctk.CTkSwitch(r4, text="keyboard", variable=self.rec_kb, font=ctk.CTkFont(family=FONT, size=12), text_color=MUTED, progress_color=ACCENT, button_color="#fff", button_hover_color="#ddd", height=20, switch_width=36, switch_height=18).pack(side="left")
 
         frow = ctk.CTkFrame(c, fg_color="transparent")
         frow.pack(fill="x", padx=28, pady=(12, 0))
         frow.grid_columnconfigure((0, 1), weight=1, uniform="f")
 
-        self.save_btn = ctk.CTkButton(frow, text="save config", image=self._icons["save"], compound="left", height=38, corner_radius=0, fg_color=CARD, hover_color="#252540", border_width=1, border_color=CARD_BORDER, font=ctk.CTkFont(size=12), command=self.save)
+        self.save_btn = ctk.CTkButton(frow, text="save config", image=self._icons["save"], compound="left", height=38, corner_radius=0, fg_color=CARD, hover_color="#252540", border_width=1, border_color=CARD_BORDER, font=ctk.CTkFont(family=FONT, size=12), command=self.save)
+        self.save_btn._icon_name = "save"
+        self._set_btn_state(self.save_btn, "disabled")
         self.save_btn.grid(row=0, column=0, padx=(0, 5), sticky="ew")
 
-        self.load_btn = ctk.CTkButton(frow, text="load config", image=self._icons["load"], compound="left", height=38, corner_radius=0, fg_color=CARD, hover_color="#252540", border_width=1, border_color=CARD_BORDER, font=ctk.CTkFont(size=12), command=self.load)
+        self.load_btn = ctk.CTkButton(frow, text="load config", image=self._icons["load"], compound="left", height=38, corner_radius=0, fg_color=CARD, hover_color="#252540", border_width=1, border_color=CARD_BORDER, font=ctk.CTkFont(family=FONT, size=12), command=self.load)
+        self.load_btn._icon_name = "load"
         self.load_btn.grid(row=0, column=1, padx=(5, 0), sticky="ew")
 
         sbar = ctk.CTkFrame(c, fg_color=CARD, corner_radius=0, border_width=1, border_color=CARD_BORDER, height=44)
         sbar.pack(fill="x", padx=28, pady=(12, 0))
         sbar.pack_propagate(False)
-        self.status = ctk.CTkLabel(sbar, text="idle", font=ctk.CTkFont(size=12), text_color=MUTED)
+        self.status = ctk.CTkLabel(sbar, text="idle", font=ctk.CTkFont(family=FONT, size=12), text_color=MUTED)
         self.status.pack(expand=True)
 
-        ctk.CTkLabel(c, text="ctrl+r record  ·  ctrl+p play  ·  ctrl+s save  ·  ctrl+l load", font=ctk.CTkFont(size=10), text_color="#3a3a55").pack(pady=(10, 16))
+        ctk.CTkLabel(c, text="ctrl+r record  ·  ctrl+p play  ·  ctrl+s save  ·  ctrl+l load", font=ctk.CTkFont(family=FONT, size=10), text_color="#5c5c78").pack(pady=(10, 16))
 
     def _setting_rows(self, parent):
         def loops(r):
-            self.loops_entry = ctk.CTkEntry(r, width=64, height=30, corner_radius=0, justify="center", fg_color=INPUT_BG, border_width=0, font=ctk.CTkFont(size=12))
+            self.loops_entry = ctk.CTkEntry(r, width=64, height=30, corner_radius=0, justify="center", fg_color=INPUT_BG, border_width=0, font=ctk.CTkFont(family=FONT, size=12))
             self.loops_entry.pack(side="right")
             self.loops_entry.insert(0, "1")
 
         def speed(r):
-            self.speed_lbl = ctk.CTkLabel(r, text="1.00x", font=ctk.CTkFont(size=12), width=40)
-            self.speed_lbl.pack(side="right")
-            self.speed_sl = ctk.CTkSlider(r, from_=0.25, to=4.0, number_of_steps=15, width=170, height=16, button_color=ACCENT, button_hover_color=ACCENT_H, progress_color=ACCENT, command=lambda v: self.speed_lbl.configure(text=f"{v:.2f}x"))
-            self.speed_sl.pack(side="right", padx=(0, 8))
+            self.speed_sl = ctk.CTkSlider(r, from_=0.25, to=4.0, number_of_steps=15, width=170, height=16, button_color=ACCENT, button_hover_color=ACCENT_H, progress_color=ACCENT, command=lambda v: (self.speed_lbl.configure(text=f"{v:.2f}x"), setattr(self.speed_lbl, '_custom_value', None)))
+            self.speed_sl.pack(side="right")
             self.speed_sl.set(1.0)
+            self.speed_lbl = ctk.CTkLabel(r, text="1.00x", font=ctk.CTkFont(family=FONT, size=12), width=48, cursor="hand2")
+            self.speed_lbl.pack(side="right", padx=(0, 8))
+            self.speed_lbl.bind("<Button-1>", lambda e: self._inline_edit(self.speed_lbl, self.speed_sl, 0.25, 4.0, "x"))
 
         def delay(r):
-            self.delay_lbl = ctk.CTkLabel(r, text="0.30s", font=ctk.CTkFont(size=12), width=40)
-            self.delay_lbl.pack(side="right")
-            self.delay_sl = ctk.CTkSlider(r, from_=0, to=5.0, number_of_steps=50, width=170, height=16, button_color=ACCENT, button_hover_color=ACCENT_H, progress_color=ACCENT, command=lambda v: self.delay_lbl.configure(text=f"{v:.2f}s"))
-            self.delay_sl.pack(side="right", padx=(0, 8))
+            self.delay_sl = ctk.CTkSlider(r, from_=0, to=5.0, number_of_steps=50, width=170, height=16, button_color=ACCENT, button_hover_color=ACCENT_H, progress_color=ACCENT, command=lambda v: (self.delay_lbl.configure(text=f"{v:.2f}s"), setattr(self.delay_lbl, '_custom_value', None)))
+            self.delay_sl.pack(side="right")
             self.delay_sl.set(0.3)
+            self.delay_lbl = ctk.CTkLabel(r, text="0.30s", font=ctk.CTkFont(family=FONT, size=12), width=48, cursor="hand2")
+            self.delay_lbl.pack(side="right", padx=(0, 8))
+            self.delay_lbl.bind("<Button-1>", lambda e: self._inline_edit(self.delay_lbl, self.delay_sl, 0.0, 5.0, "s"))
 
         def stopkey(r):
-            self.stopkey_btn = ctk.CTkButton(r, text="esc", width=90, height=30, corner_radius=0, fg_color=INPUT_BG, hover_color="#333350", border_width=1, border_color=CARD_BORDER, font=ctk.CTkFont(size=12), command=self._capture_stop_key)
+            self.stopkey_btn = ctk.CTkButton(r, text="esc", width=90, height=30, corner_radius=0, fg_color=INPUT_BG, hover_color="#333350", border_width=1, border_color=CARD_BORDER, font=ctk.CTkFont(family=FONT, size=12), command=self._capture_stop_key)
             self.stopkey_btn.pack(side="right")
 
         return [("loops", loops), ("speed", speed), ("loop delay", delay), ("stop key", stopkey)]
+
+    def _inline_edit(self, lbl, slider, vmin, vmax, suffix):
+        lbl.pack_forget()
+        parent = lbl.master
+        entry = ctk.CTkEntry(parent, width=50, height=24, corner_radius=0, justify="center",
+                             fg_color=INPUT_BG, border_width=1, border_color=ACCENT,
+                             font=ctk.CTkFont(family=FONT, size=12))
+        entry.pack(side="right")
+        entry.insert(0, f"{getattr(lbl, '_custom_value', None) or slider.get():.2f}")
+        entry.select_range(0, "end")
+        entry.focus_set()
+        def commit(e=None):
+            try:
+                v = float(entry.get())
+                if v < 0:
+                    v = 0
+            except ValueError:
+                v = slider.get()
+            slider.set(max(vmin, min(vmax, v)))
+            lbl.configure(text=f"{v:.2f}{suffix}")
+            lbl._custom_value = v
+            entry.destroy()
+            lbl.pack(side="right")
+        entry.bind("<Return>", commit)
+        entry.bind("<FocusOut>", commit)
 
     def _capture_stop_key(self):
         if self._capturing_key:
             return
         self._capturing_key = True
-        self.stopkey_btn.configure(text="press any key...", fg_color=ACCENT)
+        self._capture_held = []
+        self.stopkey_btn.configure(text="press keys...", fg_color=ACCENT)
         def on_press(event):
-            if event.event_type != keyboard.KEY_DOWN:
-                return
-            self._stop_key = event.name
-            self.stopkey_btn.configure(text=event.name, fg_color=INPUT_BG)
-            self._capturing_key = False
-            keyboard.unhook(on_press)
+            if event.event_type == keyboard.KEY_DOWN:
+                if event.name not in self._capture_held:
+                    self._capture_held.append(event.name)
+                display = "+".join(self._capture_held)
+                self.stopkey_btn.configure(text=display)
+            elif event.event_type == keyboard.KEY_UP:
+                if self._capture_held:
+                    combo = "+".join(self._capture_held)
+                    self._stop_key = combo
+                    self.stopkey_btn.configure(text=combo, fg_color=INPUT_BG)
+                    self._capture_held = []
+                    self._capturing_key = False
+                    keyboard.unhook(on_press)
         keyboard.hook(on_press)
 
+    def _steal_focus(self, event):
+        w = event.widget
+        if not isinstance(w, (ctk.CTkEntry,)):
+            self.focus_set()
+
     def _bind_keys(self):
-        self.bind("<Control-r>", lambda e: self.record())
-        self.bind("<Control-p>", lambda e: self.play())
-        self.bind("<Control-s>", lambda e: self.save())
-        self.bind("<Control-l>", lambda e: self.load())
+        def _guarded(fn):
+            def wrapper(e=None):
+                if self._capturing_key or self.recording or self.playing:
+                    return "break"
+                fn()
+            return wrapper
+        self.bind("<Control-r>", _guarded(self.record))
+        self.bind("<Control-p>", _guarded(self.play))
+        self.bind("<Control-s>", _guarded(self.save))
+        self.bind("<Control-l>", _guarded(self.load))
 
     def _set_status(self, msg):
         self.status.configure(text=msg)
 
+    def _set_btn_state(self, btn, state):
+        if not hasattr(btn, "_orig_fg"):
+            btn._orig_fg = btn.cget("fg_color")
+            btn._orig_hover = btn.cget("hover_color")
+            btn._orig_text = btn.cget("text_color")
+        
+        if state == "disabled":
+            btn.configure(state="disabled", fg_color="#44445a", hover_color="#44445a", text_color="#888899")
+            if hasattr(btn, "_icon_name"):
+                btn.configure(image=self._icons.get(f"{btn._icon_name}_disabled", btn.cget("image")))
+        else:
+            btn.configure(state="normal", fg_color=btn._orig_fg, hover_color=btn._orig_hover, text_color=btn._orig_text)
+            if hasattr(btn, "_icon_name"):
+                btn.configure(image=self._icons.get(btn._icon_name, btn.cget("image")))
+
     def _lock_ui(self):
         for b in [self.record_btn, self.play_btn, self.save_btn, self.load_btn]:
-            b.configure(state="disabled")
-        self.stop_btn.configure(state="normal")
+            self._set_btn_state(b, "disabled")
+        self._set_btn_state(self.stop_btn, "normal")
 
     def _unlock_ui(self, has=True):
-        self.record_btn.configure(state="normal")
-        self.play_btn.configure(state="normal" if has else "disabled")
-        self.save_btn.configure(state="normal" if has else "disabled")
-        self.load_btn.configure(state="normal")
-        self.stop_btn.configure(state="disabled")
+        self._set_btn_state(self.record_btn, "normal")
+        self._set_btn_state(self.play_btn, "normal" if has else "disabled")
+        self._set_btn_state(self.save_btn, "normal" if has else "disabled")
+        self._set_btn_state(self.load_btn, "normal")
+        self._set_btn_state(self.stop_btn, "disabled")
 
     def stop(self):
         with self._lock:
@@ -301,11 +402,13 @@ class MimicMe(ctk.CTk):
             return
         self._lock_ui()
         self._set_status(f"recording... press [{sk}] to stop")
+        stop_parts = set(sk.split("+"))
         def on_key(ev):
             self.keyboard_events.append(ev)
-            if ev.name == sk and ev.event_type == keyboard.KEY_DOWN:
-                with self._lock:
-                    self.recording = False
+            if ev.event_type == keyboard.KEY_DOWN and ev.name in stop_parts:
+                if all(k == ev.name or keyboard.is_pressed(k) for k in stop_parts):
+                    with self._lock:
+                        self.recording = False
         mcb = self.mouse_events.append
         if wk: keyboard.hook(on_key)
         if wm: mouse.hook(mcb)
@@ -325,7 +428,7 @@ class MimicMe(ctk.CTk):
                 except: pass
             with self._lock:
                 self.recording = False
-        while self.keyboard_events and self.keyboard_events[-1].name == sk:
+        while self.keyboard_events and self.keyboard_events[-1].name in stop_parts:
             self.keyboard_events.pop()
         has = bool(self.mouse_events or self.keyboard_events)
         self._unlock_ui(has)
@@ -347,7 +450,8 @@ class MimicMe(ctk.CTk):
             self._set_status("loop count must be at least 1")
             with self._lock: self.playing = False
             return
-        spd, dly = self.speed_sl.get(), self.delay_sl.get()
+        spd = getattr(self.speed_lbl, '_custom_value', None) or self.speed_sl.get()
+        dly = getattr(self.delay_lbl, '_custom_value', None) or self.delay_sl.get()
         self._lock_ui()
         self._set_status(f"playing {loops} loop(s) @ {spd:.1f}x...")
         def run():
