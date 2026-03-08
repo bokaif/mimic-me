@@ -1,2 +1,4 @@
 mouse==0.7.1
 keyboard==0.13.5
+customtkinter==5.2.2
+Pillow==12.1.1
