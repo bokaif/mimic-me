@@ -2,7 +2,7 @@
 
 A brutalist keyboard and mouse automation tool.
 
-<img src="assets/mimic-me.png" alt="Mimic Me UI" width="350">
+<img src="assets/mimic-me.webp" alt="Mimic Me UI">
 
 ## Backstory
 
